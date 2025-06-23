@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VR Cricket Ground</title>
+    
+
+    
+
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://cdn.aframe.io/releases/1.2.0/aframe-vrmode.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/deltaluca/aframe-physics-system/dist/aframe-physics-system.min.js"></script>
+  
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
+      #game-container {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <a-scene physics="gravity: -9.8; debug: true">
+        <!-- 3D Cricket Ground -->
+        <a-plane rotation="-90 0 0" width="50" height="50" color="#228B22"></a-plane>
+        <a-assets>
+          <audio id="crowdSound" src="assets\crowd-cheers-314919.mp3" preload="auto"></audio>
+
+          <a-asset-item id="batModel" src="assets\cricket_bat_india.glb"></a-asset-item>
+          <audio id="hitSound" src="assets\soundOfBat.mp4"></audio>
+        </a-assets>
+       <a-entity id="crowdAudioEntity"
+  sound="src: #crowdSound; autoplay: true; loop: true; volume: 0.5" 
+  position="0 2 0">
+</a-entity>
+
+        <!-- Camera and VR Setup -->
+        <!--<a-entity id="camera" camera look-controls="pointerLockEnabled: true;" position="0 1.6 0">
+          <a-cursor color="#FF6347" raycaster="objects: .clickable" animation="property: scale; to: 0.3 0.3 0.3; dur: 200" />
+        </a-entity>-->
+        <a-entity id="camera" camera look-controls position="0 1.6 0">
+  <a-cursor 
+    raycaster="objects: .clickable" 
+    fuse="false" 
+    color="#FF6347"
+    animation__click="property: scale; startEvents: click; to: 0.3 0.3 0.3; dur: 200">
+  </a-cursor>
+</a-entity>
+
+
+        <!-- Bat Positioned in Front of the User -->
+        <a-entity 
+        id="bat"
+        gltf-model="#batModel"
+        position="0.2 2.6 -1"
+        
+        rotation="30 -120 10"
+        
+        scale="0.5 0.5 0.5"
+        >
+        <a-sound id="batSound" src="#hitSound" position="0 0 0" autoplay="false"></a-sound>
+      </a-entity>
+      
+
+
+        <!-- Lights for the environment -->
+        <a-light type="directional" intensity="1" position="5 10 5"></a-light>
+        <a-light type="ambient" intensity="0.5"></a-light>
+        <a-text 
+  id="hitText"
+  value=""
+  position="0 2 -2"
+  align="center"
+  color="yellow"
+  width="4"
+  visible="false">
+</a-text>
+<a-text id="scoreText" value="Score: 0" position="-1.5 2 -3" color="#00FF00" width="4"></a-text>
+<a-text id="missText" value="Misses: 0" position="1 2 -3" color="red" width="4"></a-text>
+<a-text id="gameOverText" value="Game Over!" position="0 2 -2" align="center" color="orange" width="4" visible="false"></a-text>
+
+<!-- START MENU -->
+<a-entity id="startMenu">
+  <a-plane position="0 2 -3" width="3" height="2" color="#222" opacity="0.8"></a-plane>
+
+  <a-text value="VR Cricket Game"
+          position="0 2.5 -2.9"
+          align="center"
+          color="gold"
+          width="6">
+  </a-text>
+
+  <a-box id="startButton"
+         class="clickable"
+         position="0 1.8 -2.9"
+         width="1.5"
+         height="0.5"
+         depth="0.2"
+         color="#32CD32"
+         start-game>
+  </a-box>
+
+  <a-text value="Start Game"
+          position="0 1.8 -2.8"
+          align="center"
+          color="black"
+          width="4">
+  </a-text>
+</a-entity>
+
+
+      </a-scene>
+    </div>
+
+    <script>
+      // Function to calculate the final position of the ball (predicting its trajectory)
+     let gameStarted = false;
+      let ballCount = 0;
+      let score=0;
+      let misses=0;
+      let gameOver=false;
+      function createAndAnimateBall() {
+        ballCount++;
+  const ball = document.createElement('a-sphere');
+  ball.setAttribute('id', 'ball');
+  ball.setAttribute('position', '0 5 -10');
+  ball.setAttribute('radius', '0.1');
+  ball.setAttribute('color', '#FF6347');
+  ball.setAttribute('dynamic-body', 'mass: 1');
+  ball.setAttribute('physics-material', 'friction: 0.5; restitution: 0.6');
+  ball.setAttribute('scale', '1 1 1');
+
+  const scene = document.querySelector('a-scene');
+  scene.appendChild(ball);
+
+  document.querySelector('#bat').setAttribute('position', '-0.8 0.86 -1.2');
+
+  let ballPos = { x: 0, y: 5, z: -10 };
+  
+  let velocityZ;
+if (ballCount <= 5) {
+  velocityZ = 0.8; // Normal
+} else if (ballCount <= 10) {
+  velocityZ = 0.9; // Medium
+} else {
+  velocityZ = 1.0; // Fast
+}
+let velocity = { x: 0, y: -0.8, z: velocityZ };
+
+  let thisBallCollided = false;
+
+  const movementInterval = setInterval(() => {
+    if (thisBallCollided) return;
+
+    ballPos.x += velocity.x;
+    ballPos.y += velocity.y;
+    ballPos.z += velocity.z;
+
+    velocity.y -= 0.2;
+
+    if (ballPos.y <= 0) {
+      ballPos.y = 0;
+      velocity.y = Math.abs(velocity.y) * 0.25;
+      velocity.z *= 0.95;
+    }
+
+    ball.setAttribute('position', `${ballPos.x} ${ballPos.y} ${ballPos.z}`);
+
+    if (ballPos.z >= 0) {
+      clearInterval(movementInterval);
+      if (!gameOver && !thisBallCollided) {
+        misses++;
+        document.querySelector('#missText').setAttribute('value', `Misses: ${misses}`);
+
+        if (misses >= 5) {
+          gameOver = true;
+          document.querySelector('#gameOverText').setAttribute('visible', true);
+        const crowd = document.querySelector('#crowdAudioEntity');
+if (crowd && crowd.components.sound) {
+  crowd.components.sound.stopSound();
+  console.log("Crowd sound stopped.");
+}
+
+        }
+
+        if (ball && ball.parentNode) {
+          ball.remove();
+        }
+      }
+    }
+  }, 50);
+
+  const collisionInterval = setInterval(() => {
+    const bat = document.querySelector('#bat');
+    if (!bat || !ball || thisBallCollided || !ball.parentNode) return;
+
+    const ballPosition = ball.getAttribute('position');
+    const batPosition = bat.getAttribute('position');
+    const ballSize = ball.getAttribute('scale') || { x: 1, y: 1, z: 1 };
+    const batSize = bat.getAttribute('scale') || { x: 1, y: 1, z: 1 };
+
+    const ballBounds = {
+      xMin: ballPosition.x - ballSize.x / 2,
+      xMax: ballPosition.x + ballSize.x / 2,
+      yMin: ballPosition.y - ballSize.y / 2,
+      yMax: ballPosition.y + ballSize.y / 2,
+      zMin: ballPosition.z - ballSize.z / 2,
+      zMax: ballPosition.z + ballSize.z / 2,
+    };
+
+    const batBounds = {
+      xMin: batPosition.x - batSize.x / 2,
+      xMax: batPosition.x + batSize.x / 2,
+      yMin: batPosition.y - batSize.y / 2,
+      yMax: batPosition.y + batSize.y / 2,
+      zMin: batPosition.z - batSize.z / 2,
+      zMax: batPosition.z + batSize.z / 2,
+    };
+
+    const isColliding =
+      ballBounds.xMax > batBounds.xMin &&
+      ballBounds.xMin < batBounds.xMax &&
+      ballBounds.yMax > batBounds.yMin &&
+      ballBounds.yMin < batBounds.yMax &&
+      ballBounds.zMax > batBounds.zMin &&
+      ballBounds.zMin < batBounds.zMax;
+
+    if (isColliding) {
+      thisBallCollided = true;
+
+      clearInterval(movementInterval);
+
+      const batSound = document.querySelector('#batSound');
+      if (batSound?.components?.sound) {
+        batSound.components.sound.playSound();
+      }
+
+      const text = document.querySelector('#hitText');
+      const messages = ["Nice shot!", "Boom!", "You smashed it!", "What a shot!"];
+      const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+      text.setAttribute('visible', false);
+      setTimeout(() => {
+        text.setAttribute('value', randomMsg);
+        text.setAttribute('visible', true);
+      }, 20);
+      setTimeout(() => {
+        text.setAttribute('visible', false);
+      }, 2000);
+
+      score++;
+      document.querySelector('#scoreText').setAttribute('value', `Score: ${score}`);
+
+      // ✅ ADDING BACK THE ANIMATION YOU ASKED FOR
+      ball.removeAttribute('animation__ball_pos');
+      ball.setAttribute('animation__ball_pos', {
+        property: 'position',
+        to: '0 6 -7',
+        dur: 500,
+        easing: 'easeOutQuad',
+        loop: false
+      });
+
+      // Remove ball after animation
+      setTimeout(() => {
+        if (ball && ball.parentNode) {
+          ball.remove();
+        }
+      }, 600);
+    }
+
+    if (!ball || !ball.parentNode || gameOver) {
+      clearInterval(collisionInterval);
+    }
+  }, 100);
+}
+
+      
+      AFRAME.registerComponent('start-game', {
+    init: function () {
+      this.el.addEventListener('click', () => {
+        gameStarted = true;
+        document.querySelector('#startMenu').setAttribute('visible', 'false');
+        document.querySelector('#scoreText').setAttribute('visible', 'true');
+        document.querySelector('#missText').setAttribute('visible', 'true');
+        console.log("Game started!");
+      });
+    }
+  });
+document.querySelector('a-scene').addEventListener('enter-vr', () => {
+  if (!gameStarted) {
+    gameStarted = true;
+    document.querySelector('#startMenu').setAttribute('visible', 'false');
+    document.querySelector('#scoreText').setAttribute('visible', 'true');
+    document.querySelector('#missText').setAttribute('visible', 'true');
+    console.log("Game auto-started on entering VR");
+  }
+});
+
+
+      setInterval(() => {
+  if (gameStarted && !gameOver) {
+    createAndAnimateBall();
+  }
+}, 2000);
+
+ // New ball every 2 seconds
+    </script>
+    <script src="batSwing.js"></script>
+  </body>
+</html>
